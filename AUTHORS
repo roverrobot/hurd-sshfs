@@ -1,0 +1,3 @@
+sshfs -- An sftp translator (remote file system) for GNU Hurd
+
+Written by Junling Ma <junlingm@gmail.com>

@@ -1,0 +1,4 @@
+sshfs -- An sftp translator (remote file system) for GNU Hurd
+
+0.1
+the initial implementation, only ls works.

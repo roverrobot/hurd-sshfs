@@ -1,0 +1,4 @@
+sshfs -- An sftp translator (remote file system) for GNU Hurd
+
+August 27, 2020
+0.1: the initial implementation, only ls works.
