@@ -449,7 +449,7 @@ static error_t sshfs_opendir(struct vfs_hooks *fs, ino64_t ino, struct vfs_dir *
  * size is not large enough to hold the entry, return EKERN_NO_SPACE. DIRENT may be 
  * NULL, in which case the entry will be skipped. ENOENT will be returned if no further 
  * entries exist */ 
-static error_t sshfs_readdir(struct vfs_dir *dir, struct dirent *ent, size_t size)
+static error_t sshfs_readdir(struct vfs_dir *dir, struct dirent64 *ent, size_t size)
 {
   sshfs_log("readdir: %s\n", dir->dir->name);
   pthread_mutex_lock(&dir->fs->lock);
