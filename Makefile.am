@@ -17,7 +17,7 @@
 #   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
 bin_PROGRAMS = sshfs
-sshfs_SOURCES = hash.c main.c sshfs.c sshfs.h sshfs_hooks.h url.c url.h
+sshfs_SOURCES = hash.c main.c sshfs.c sshfs.h sshfs_hooks.h url.c url.h user.c
 
 AM_CFLAGS = -std=gnu99 -fgnu89-inline
-AM_LDFLAGS = -lvfs -lnetfs -lihash
+AM_LDFLAGS = -lvfs -lnetfs -lihash -liohelp -lshouldbeinlibc

@@ -248,6 +248,104 @@ static const char *remote_path(struct vfs_hooks *fs, ino64_t ino)
   return ino ? (const char *)(uintptr_t)ino : ((struct sshfs *)fs)->url->path;
 }
 
+/* execute a shell command specified bt ARGZ on the remote host, and return the stdout
+ * output in VALUE, nad the total length of the output in SIZE. If output is not needed,
+ * then set VALUE to NULL. Note that the output is read and discarded in this case. If 
+ * the total length is not needed, then set SIZE to NULL. */
+error_t shell_exec(struct vfs_hooks *fs, const char *argz, char **value, size_t *size)
+{
+  size_t l = (size) ? *size : 0;
+  if (l == 0 && value != NULL)
+    l = 65536;
+  if (size)
+    *size = 0;
+  if (value)
+    *value = NULL;
+  
+  pthread_mutex_lock(&((struct sshfs*)fs)->lock);
+  ssh_channel channel = ssh_channel_new(((struct sshfs*)fs)->sftp->session);
+  if (channel == NULL)
+    {
+      pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
+      return ENODATA;
+    }
+
+  error_t err = EIO;
+  if (ssh_channel_open_session(channel) == SSH_OK &&
+    ssh_channel_request_exec(channel, argz) == SSH_OK)
+    {
+      err = ESUCCESS;
+      /* do we expect data? */
+      if (value != NULL && l > 0)
+        {
+          *value = malloc(l);
+          if (*value == NULL)
+            err = ENOMEM;
+        }
+
+      if (value && *value)
+        {
+          size_t total = 0;
+          char *p = *value;
+          for (;;)
+            {
+              int n = ssh_channel_read(channel, p, l, 0);
+              /* read error ? */
+              if (n < 0)
+                {
+                  err = EIO;
+                  break;
+                }
+              total += n;
+              p += n;
+              if (total < l)
+                {
+                  *p = 0;
+                  break;
+                }
+              else /* n == l, we must check if there are more data available */
+                {
+                  l <<= 1;
+                  *value = realloc(*value, l);
+                  if (*value == NULL)
+                    {
+                      err = ENOMEM;
+                      break;
+                    }
+                }
+            }
+          if (size)
+            *size = total;
+        }
+    }
+
+  ssh_channel_send_eof(channel);
+  ssh_channel_close(channel);  
+  ssh_channel_free(channel);
+  pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
+  return get_errno(err);
+}
+
+/* using the id command to get the remote user id */
+static struct iouser *get_remote_user(struct sshfs *fs)
+{
+  char *buf;
+  size_t len = 0;
+  struct iouser *user = NULL;
+  if (!shell_exec(&fs->hooks, "id", &buf, &len) && len > 0)
+    user = sshfs_parse_id(buf);
+  free(buf);
+  return user;
+}
+
+/* optional hook to replace the UID and GID on a remote host by those of LOCALUSER.
+ * For example, a server may ssh or ftp to a remote host with a user name and group id 
+ * that differs from the local user that starts the server */
+error_t sshfs_getuser(struct vfs_hooks *fs, struct iouser *localuser, uid_t *uid, gid_t *gid)
+{
+  return sshfs_replace_user(((struct sshfs*)fs)->remote_user, localuser, uid, gid);
+}
+
 /* an inode is not used by libvfs any more. It should be dropped */
 void sshfs_drop(struct vfs_hooks *fs, ino64_t ino)
 {
@@ -436,6 +534,8 @@ struct sshfs *sshfs_create(struct URL *url)
       url_free(url);
       return NULL;
     }
+  fs->remote_user = get_remote_user(fs);
+  fs->hooks.getuser = (fs->remote_user) ? sshfs_getuser : NULL;
   fs->hooks.statfs = sshfs_statfs;
   fs->hooks.drop = sshfs_drop;
   fs->hooks.lstat = sshfs_lstat;
