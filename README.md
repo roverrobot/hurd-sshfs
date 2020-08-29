@@ -8,5 +8,5 @@ where [...] means optional arguments. Note that the passward shall not be includ
 
 ## Dependence
 
-* The libvfs library in the hurd-libvfs repo (must be installed to, i.e., configure the prefix to, /usr so that a passive translater can find it)
+* The libvfs library in [the hurd-libvfs repo](https://github.com/roverrobot/hurd-libvfs.git) (must be installed to, i.e., configure the prefix to, /usr so that a passive translater can find it)
 * libssh
