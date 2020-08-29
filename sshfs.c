@@ -15,8 +15,8 @@
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
-#include "sshfs.h"
 #include "sshfs_hooks.h"
+#include "sshfs.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
@@ -243,13 +243,13 @@ error_t get_error(struct vfs_hooks *fs)
 }
 
 /* return the absolute path of the inode INO on the server */
-static const char *remote_path(struct vfs_hooks *fs, ino_t ino)
+static const char *remote_path(struct vfs_hooks *fs, ino64_t ino)
 {
   return ino ? (const char *)(uintptr_t)ino : ((struct sshfs *)fs)->url->path;
 }
 
 /* an inode is not used by libvfs any more. It should be dropped */
-void sshfs_drop(struct vfs_hooks *fs, ino_t ino)
+void sshfs_drop(struct vfs_hooks *fs, ino64_t ino)
 {
   if (ino)
     {
@@ -269,7 +269,7 @@ error_t sshfs_statfs(struct vfs_hooks *hooks, struct statfs *statbuf)
 
 /* convert sftp_attributes into struct stat, with the given inode INO (because sftp_attributes
  * does not contain an inode) */
-static error_t fill_stat(struct stat *statbuf, sftp_attributes attr, ino_t ino)
+static error_t fill_stat(struct stat64 *statbuf, sftp_attributes attr, ino64_t ino)
 {
   struct timeval tp;
   error_t err = gettimeofday(&tp, NULL);
@@ -296,7 +296,7 @@ static error_t fill_stat(struct stat *statbuf, sftp_attributes attr, ino_t ino)
 }
 
   /* stat the inode INO and return in STATBUF, do not follow the symlink if INO is one */
-static error_t sshfs_lstat(struct vfs_hooks *fs, ino_t ino, struct stat *statbuf)
+static error_t sshfs_lstat(struct vfs_hooks *fs, ino64_t ino, struct stat64 *statbuf)
 {
   const char *p = remote_path(fs, ino);
   sshfs_log("lstat: %s\n", p);
@@ -312,7 +312,7 @@ static error_t sshfs_lstat(struct vfs_hooks *fs, ino_t ino, struct stat *statbuf
 }
 
 /* look up a NAME in a DIR, and return the inode in INO */
-error_t sshfs_lookup(struct vfs_hooks *fs, ino_t dir, const char *name, ino_t *ino)
+error_t sshfs_lookup(struct vfs_hooks *fs, ino64_t dir, const char *name, ino64_t *ino)
 {
   char *p = concat_path(remote_path(fs, dir), name);
   if (p == NULL)
@@ -323,7 +323,7 @@ error_t sshfs_lookup(struct vfs_hooks *fs, ino_t dir, const char *name, ino_t *i
   return err;
 }
 
-static error_t sshfs_opendir(struct vfs_hooks *fs, ino_t ino, struct vfs_dir **dir)
+static error_t sshfs_opendir(struct vfs_hooks *fs, ino64_t ino, struct vfs_dir **dir)
 {
   const char *p = remote_path(fs, ino);
   error_t err = ESUCCESS;
@@ -373,12 +373,14 @@ static error_t sshfs_readdir(struct vfs_dir *dir, struct dirent *ent, size_t siz
     return EKERN_NO_SPACE;
 
   pthread_mutex_lock(&dir->fs->lock);
-  error_t err = sshfs_getinode(dir->fs->inodes, p, &ent->d_ino);
+  ino64_t ino;
+  error_t err = sshfs_getinode(dir->fs->inodes, p, &ino);
   pthread_mutex_unlock(&dir->fs->lock);
   if (err)
     return err;
 
   memcpy(ent->d_name, attr->name, namlen);
+  ent->d_ino = ino;
   ent->d_reclen = reclen;
   ent->d_namlen = namlen;
   ent->d_type = IFTODT(attr->permissions);
@@ -400,7 +402,7 @@ static error_t sshfs_closedir(struct vfs_dir *dir)
 }
 
 /* read the content of a symlink stored in INO into CONTENT */
-static error_t sshfs_readlink(struct vfs_hooks *fs, ino_t ino, char **content)
+static error_t sshfs_readlink(struct vfs_hooks *fs, ino64_t ino, char **content)
 {
   const char *p = remote_path(fs, ino);
   sshfs_log("readlink: %s\n", p);

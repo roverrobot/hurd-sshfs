@@ -22,7 +22,7 @@
 #include <stdint.h>
 #include <string.h>
 
-
+typedef uint64_t ino64_t;
 /* Calculate NAME_PTR's hash value.  */
 static hurd_ihash_key_t ihash_hash (const void *name)
 {
@@ -56,7 +56,7 @@ struct hurd_ihash *sshfs_getihash()
 }
 
 /* return the inode corresponding to PATH in INO by looking up in INODES */
-error_t sshfs_getinode(struct hurd_ihash *inodes, char *path, ino_t *ino)
+error_t sshfs_getinode(struct hurd_ihash *inodes, char *path, ino64_t *ino)
 {
   error_t err = ESUCCESS;
   *ino = (uintptr_t)hurd_ihash_find(inodes, (hurd_ihash_key_t)path);
@@ -72,7 +72,7 @@ error_t sshfs_getinode(struct hurd_ihash *inodes, char *path, ino_t *ino)
 }
 
 /* drop the inode INO from the hash table INODES */
-void sshfs_dropinode(struct hurd_ihash *inodes, ino_t ino)
+void sshfs_dropinode(struct hurd_ihash *inodes, ino64_t ino)
 {
   hurd_ihash_remove(inodes, (hurd_ihash_key_t)ino);
 }

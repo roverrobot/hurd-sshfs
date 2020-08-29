@@ -19,9 +19,9 @@
 #ifndef __SSHFS_HOOKS_H__
 #define __SSHFS_HOOKS_H__
 
+#include <libvfs/vfs_hooks.h>
 #include <libssh/libssh.h>
 #include <libssh/sftp.h>
-#include <libvfs/vfs_hooks.h>
 #include <pthread.h>
 
 /* the file returned by the open hook */
@@ -72,9 +72,8 @@ extern FILE *sshfs_log_file;
 /* create the inode hash table */
 extern struct hurd_ihash *sshfs_getihash();
 /* return the inode corresponding to PATH in INO by looking up in INODES */
-extern error_t sshfs_getinode(struct hurd_ihash *inodes, char *path, ino_t *ino);
+extern error_t sshfs_getinode(struct hurd_ihash *inodes, char *path, ino64_t *ino);
 /* drop the inode INO from the hash table INODES */
-void sshfs_dropinode(struct hurd_ihash *inodes, ino_t ino);
-
+void sshfs_dropinode(struct hurd_ihash *inodes, ino64_t ino);
 
 #endif
