@@ -511,6 +511,90 @@ static error_t sshfs_readlink(struct vfs_hooks *fs, ino64_t ino, char **content)
   return (*content == NULL) ? get_error(fs) : ESUCCESS;
 }
 
+/* open the file with in INO with FLAGS, and return it in FILE. If the file will be 
+ * created, create it with the MODE
+ */
+static error_t sshfs_open(struct vfs_hooks *fs, ino64_t ino, int flags, mode_t mode, struct vfs_file **file)
+{
+  error_t err = ESUCCESS;
+  const char *p = remote_path(fs, ino);
+  *file = malloc(sizeof(**file));
+  if (*file == NULL)
+    err = ENOMEM;
+    
+  if (!err)
+    {
+      sshfs_log("open: %s\n", p);
+      pthread_mutex_lock(&((struct sshfs*)fs)->lock);
+      (*file)->file = sftp_open(((struct sshfs *)fs)->sftp, p, flags, mode);
+      pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
+      sshfs_log("open done: %s\n", p);
+      if ((*file)->file == NULL)
+        {
+          free(*file);
+          *file = NULL;
+          err = get_error(fs);
+        }
+      else
+        {
+          (*file)->offset = 0;
+          (*file)->fs = (struct sshfs *)fs;
+          if ((*file)->file->name == NULL)
+            (*file)->file->name = strdup(p);
+        }
+    }
+  return err;
+}
+
+static error_t sshfs_close(struct vfs_file *file)
+{
+  sshfs_log("close: %s\n", file->file->name);
+  pthread_mutex_lock(&file->fs->lock);
+  int r = sftp_close(file->file);
+  pthread_mutex_unlock(&file->fs->lock);
+  sshfs_log("close done\n");
+  free(file);
+  return r;
+}
+
+/* read the FILE from the OFFSET into BUFFER, which capacity is specified in *SIZE. THe
+ * number of bytes successfully read is returned in *SIZE */ 
+static error_t sshfs_read(struct vfs_file *file, off_t offset, void *buffer, size_t *size)
+{
+  if (offset != -1 && offset != file->offset)
+    {
+      sshfs_log("seek: %s %lu -> %lu\n", file->file->name, file->offset, offset);
+      pthread_mutex_lock(&file->fs->lock);
+      sftp_seek64(file->file, offset);
+      pthread_mutex_unlock(&file->fs->lock);
+      sshfs_log("seek done\n");
+      file->offset = offset;
+    }
+  size_t total = *size;
+  void *p = buffer;
+  error_t err;
+  while (total)
+    {
+      sshfs_log("read: %s at %d\n", file->file->name, offset);
+      pthread_mutex_lock(&file->fs->lock);
+      int l = sftp_read(file->file, p, total);
+      pthread_mutex_unlock(&file->fs->lock);
+      sshfs_log("read %d\n", l);
+      err = (l < 0) ? get_error(&file->fs->hooks) : ESUCCESS;
+      if (!err && l >= 0)
+        {
+          total -= (size_t)l;
+          p += l;
+        }
+      if (l <= 0 || total == 0)
+        break;
+    }
+  if (!err)
+    *size -= total;
+  file->offset += *size;
+  return err;
+}
+
 /* create an sshfs the implements vfs_hooks from the URL */
 struct sshfs *sshfs_create(struct URL *url)
 {
@@ -544,6 +628,9 @@ struct sshfs *sshfs_create(struct URL *url)
   fs->hooks.readdir = sshfs_readdir;
   fs->hooks.closedir = sshfs_closedir;
   fs->hooks.readlink = sshfs_readlink;
+  fs->hooks.open = sshfs_open;
+  fs->hooks.close = sshfs_close;
+  fs->hooks.read = sshfs_read;
   fs->inodes = sshfs_getihash();
   return fs;
 }
