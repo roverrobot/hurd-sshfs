@@ -70,9 +70,3 @@ error_t sshfs_getinode(struct hurd_ihash *inodes, char *path, ino64_t *ino)
     free(path);
   return err;
 }
-
-/* drop the inode INO from the hash table INODES */
-void sshfs_dropinode(struct hurd_ihash *inodes, ino64_t ino)
-{
-  hurd_ihash_remove(inodes, (hurd_ihash_key_t)ino);
-}

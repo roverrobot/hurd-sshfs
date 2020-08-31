@@ -346,17 +346,6 @@ error_t sshfs_getuser(struct vfs_hooks *fs, struct iouser *localuser, uid_t *uid
   return sshfs_replace_user(((struct sshfs*)fs)->remote_user, localuser, uid, gid);
 }
 
-/* an inode is not used by libvfs any more. It should be dropped */
-void sshfs_drop(struct vfs_hooks *fs, ino64_t ino)
-{
-  if (ino)
-    {
-      pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
-      sshfs_dropinode(((struct sshfs *)fs)->inodes, ino);
-      pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
-    }
-}
-
 error_t sshfs_statfs(struct vfs_hooks *hooks, struct statfs *statbuf)
 {
   memset (statbuf, 0, sizeof *statbuf);
@@ -621,7 +610,7 @@ struct sshfs *sshfs_create(struct URL *url)
   fs->remote_user = get_remote_user(fs);
   fs->hooks.getuser = (fs->remote_user) ? sshfs_getuser : NULL;
   fs->hooks.statfs = sshfs_statfs;
-  fs->hooks.drop = sshfs_drop;
+  fs->hooks.drop = NULL;
   fs->hooks.lstat = sshfs_lstat;
   fs->hooks.lookup = sshfs_lookup;
   fs->hooks.opendir = sshfs_opendir;
