@@ -13,4 +13,6 @@ the console
 
 2. Dependence
 
-This program depends on the libvfs library in the hurd-libvfs repo
+* The libvfs library in https://github.com/roverrobot/hurd-libvfs.git (must be installed 
+  to, i.e., configure the prefix to, /usr so that a passive translater can find it)
+* libssh
