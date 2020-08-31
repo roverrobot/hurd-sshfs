@@ -27,6 +27,9 @@ struct sshfs *sshfs_create(struct URL *url);
 extern FILE *sshfs_log_file;
 #define sshfs_log(...) \
   if (sshfs_log_file) \
-    fprintf(sshfs_log_file, __VA_ARGS__)
+    { \
+      fprintf(sshfs_log_file, __VA_ARGS__); \
+      fflush(sshfs_log_file); \
+    }
 
 #endif
