@@ -229,14 +229,12 @@ error_t get_error(struct vfs_hooks *fs)
 {
   sftp_session sftp = ((struct sshfs *)fs)->sftp;
   sshfs_log("get error\n");
-  pthread_mutex_lock(&((struct sshfs *)fs)->lock);
   int sftp_err = sftp_get_error(sftp);
   if (sftp_err == 0)
     {
       sftp_err = ssh_get_error_code(sftp->session);
       sshfs_log("ssh error: %s\n", ssh_get_error(sftp->session));
     }
-  pthread_mutex_unlock(&((struct sshfs *)fs)->lock);
   error_t err = get_errno(sftp_err);
   sshfs_log("got error: %d -> %d (%x)\n", sftp_err, err, err);
   return err;
@@ -389,11 +387,10 @@ static error_t sshfs_lstat(struct vfs_hooks *fs, ino64_t ino, struct stat64 *sta
   sshfs_log("lstat: %s\n", p);
   pthread_mutex_lock(&((struct sshfs*)fs)->lock);
   sftp_attributes attr = sftp_lstat(((struct sshfs *)fs)->sftp, p);
+  error_t err = (!attr) ? get_error(fs) : fill_stat(statbuf, attr, ino);
+  if (attr)
+    sftp_attributes_free(attr);
   pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
-  if (!attr)
-    return get_error(fs);
-  error_t err = fill_stat(statbuf, attr, ino);
-  sftp_attributes_free(attr);
   sshfs_log("lstat done: %s (%o)\n", p, statbuf->st_mode);
   return err;
 }
@@ -420,8 +417,6 @@ static error_t sshfs_opendir(struct vfs_hooks *fs, ino64_t ino, struct vfs_dir *
       sshfs_log("opendir: %s\n", p);
       pthread_mutex_lock(&((struct sshfs*)fs)->lock);
       (*dir)->dir = sftp_opendir(((struct sshfs *)fs)->sftp, p);
-      pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
-      sshfs_log("opendir done: %s\n", p);
       if ((*dir)->dir == NULL)
         {
           free(*dir);
@@ -430,6 +425,8 @@ static error_t sshfs_opendir(struct vfs_hooks *fs, ino64_t ino, struct vfs_dir *
         }
       else
         (*dir)->fs = (struct sshfs *)fs;
+      pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
+      sshfs_log("opendir done: %s\n", p);
     }
   return err;
 }
@@ -495,9 +492,10 @@ static error_t sshfs_readlink(struct vfs_hooks *fs, ino64_t ino, char **content)
   sshfs_log("readlink: %s\n", p);
   pthread_mutex_lock(&((struct sshfs*)fs)->lock);
   *content = sftp_readlink(((struct sshfs *)fs)->sftp, p);
+  error_t err = (*content == NULL) ? get_error(fs) : ESUCCESS;
   pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
   sshfs_log("readlink done: %s\n", p);
-  return (*content == NULL) ? get_error(fs) : ESUCCESS;
+  return err;
 }
 
 /* open the file with in INO with FLAGS, and return it in FILE. If the file will be 
@@ -516,8 +514,6 @@ static error_t sshfs_open(struct vfs_hooks *fs, ino64_t ino, int flags, mode_t m
       sshfs_log("open: %s\n", p);
       pthread_mutex_lock(&((struct sshfs*)fs)->lock);
       (*file)->file = sftp_open(((struct sshfs *)fs)->sftp, p, flags, mode);
-      pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
-      sshfs_log("open done: %s\n", p);
       if ((*file)->file == NULL)
         {
           free(*file);
@@ -531,6 +527,8 @@ static error_t sshfs_open(struct vfs_hooks *fs, ino64_t ino, int flags, mode_t m
           if ((*file)->file->name == NULL)
             (*file)->file->name = strdup(p);
         }
+      pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
+      sshfs_log("open done: %s\n", p);
     }
   return err;
 }
@@ -550,12 +548,11 @@ static error_t sshfs_close(struct vfs_file *file)
  * number of bytes successfully read is returned in *SIZE */ 
 static error_t sshfs_read(struct vfs_file *file, off_t offset, void *buffer, size_t *size)
 {
+  pthread_mutex_lock(&file->fs->lock);
   if (offset != -1 && offset != file->offset)
     {
       sshfs_log("seek: %s %lu -> %lu\n", file->file->name, file->offset, offset);
-      pthread_mutex_lock(&file->fs->lock);
       sftp_seek64(file->file, offset);
-      pthread_mutex_unlock(&file->fs->lock);
       sshfs_log("seek done\n");
       file->offset = offset;
     }
@@ -565,9 +562,7 @@ static error_t sshfs_read(struct vfs_file *file, off_t offset, void *buffer, siz
   while (total)
     {
       sshfs_log("read: %s at %d\n", file->file->name, offset);
-      pthread_mutex_lock(&file->fs->lock);
       int l = sftp_read(file->file, p, total);
-      pthread_mutex_unlock(&file->fs->lock);
       sshfs_log("read %d\n", l);
       err = (l < 0) ? get_error(&file->fs->hooks) : ESUCCESS;
       if (!err && l >= 0)
@@ -581,6 +576,7 @@ static error_t sshfs_read(struct vfs_file *file, off_t offset, void *buffer, siz
   if (!err)
     *size -= total;
   file->offset += *size;
+  pthread_mutex_unlock(&file->fs->lock);
   return err;
 }
 
