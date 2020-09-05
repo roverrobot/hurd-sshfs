@@ -575,6 +575,42 @@ static error_t sshfs_read(struct vfs_file *file, off_t offset, void *buffer, siz
   return err;
 }
 
+/* write BUFFER to the FILE starting at the OFFSET for a length of *SIZE bytes. The
+ * number of bytes successfully written is returned in *SIZE */ 
+static error_t sshfs_write(vfs_file_t file, off_t offset, const void *buffer, size_t *size)
+{
+  pthread_mutex_lock(&file->fs->lock);
+  if (offset != -1 && offset != file->offset)
+    {
+      sshfs_log("seek: %s %lu -> %lu\n", file->file->name, file->offset, offset);
+      sftp_seek64(file->file, offset);
+      sshfs_log("seek done\n");
+      file->offset = offset;
+    }
+  size_t total = *size;
+  const void *p = buffer;
+  error_t err;
+  while (total)
+    {
+      sshfs_log("write: %s at %d\n", file->file->name, offset);
+      int l = sftp_write(file->file, p, total);
+      sshfs_log("written %d\n", l);
+      err = (l < 0) ? get_error(&file->fs->hooks) : ESUCCESS;
+      if (!err && l >= 0)
+        {
+          total -= (size_t)l;
+          p += l;
+        }
+      if (l <= 0 || total == 0)
+        break;
+    }
+  if (!err)
+    *size -= total;
+  file->offset += *size;
+  pthread_mutex_unlock(&file->fs->lock);
+  return err;
+}
+
 /* create an sshfs the implements vfs_hooks from the URL */
 struct sshfs *sshfs_create(struct URL *url)
 {
@@ -611,6 +647,7 @@ struct sshfs *sshfs_create(struct URL *url)
   fs->hooks.open = sshfs_open;
   fs->hooks.close = sshfs_close;
   fs->hooks.read = sshfs_read;
+  fs->hooks.write = sshfs_write;
   fs->inodes = sshfs_getihash();
   return fs;
 }
