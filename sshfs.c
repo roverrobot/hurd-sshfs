@@ -336,14 +336,6 @@ static struct iouser *get_remote_user(struct sshfs *fs)
   return user;
 }
 
-/* optional hook to replace the UID and GID on a remote host by those of LOCALUSER.
- * For example, a server may ssh or ftp to a remote host with a user name and group id 
- * that differs from the local user that starts the server */
-error_t sshfs_getuser(struct vfs_hooks *fs, struct iouser *localuser, uid_t *uid, gid_t *gid)
-{
-  return sshfs_replace_user(((struct sshfs*)fs)->remote_user, localuser, uid, gid);
-}
-
 error_t sshfs_statfs(struct vfs_hooks *hooks, struct statfs *statbuf)
 {
   memset (statbuf, 0, sizeof *statbuf);
@@ -385,11 +377,14 @@ static error_t sshfs_lstat(struct vfs_hooks *fs, ino64_t ino, struct stat64 *sta
 {
   const char *p = remote_path(fs, ino);
   sshfs_log("lstat: %s\n", p);
-  pthread_mutex_lock(&((struct sshfs*)fs)->lock);
+  pthread_mutex_lock(&((struct sshfs *)fs)->lock);
   sftp_attributes attr = sftp_lstat(((struct sshfs *)fs)->sftp, p);
   error_t err = (!attr) ? get_error(fs) : fill_stat(statbuf, attr, ino);
   if (attr)
     sftp_attributes_free(attr);
+  if (!err && ((struct sshfs *)fs)->local_user != NULL)
+    err = sshfs_replace_user(((struct sshfs*)fs)->remote_user, ((struct sshfs *)fs)->local_user, 
+      &statbuf->st_uid, &statbuf->st_gid);
   pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
   sshfs_log("lstat done: %s (%o)\n", p, statbuf->st_mode);
   return err;
@@ -604,7 +599,7 @@ struct sshfs *sshfs_create(struct URL *url)
       return NULL;
     }
   fs->remote_user = get_remote_user(fs);
-  fs->hooks.getuser = (fs->remote_user) ? sshfs_getuser : NULL;
+  fs->local_user = (fs->remote_user) ? sshfs_get_local_user(fs) : NULL;
   fs->hooks.statfs = sshfs_statfs;
   fs->hooks.drop = NULL;
   fs->hooks.lstat = sshfs_lstat;

@@ -62,6 +62,8 @@ struct sshfs {
   pthread_mutex_t lock;
   /* the user on the remote host */
   struct iouser *remote_user;
+  /* the local user */
+  struct iouser *local_user;
 };
 
 /* The following declarations exist because libssh and hurd conflict on the definition of
@@ -79,6 +81,8 @@ extern error_t sshfs_getinode(struct hurd_ihash *inodes, char *path, ino64_t *in
 void sshfs_dropinode(struct hurd_ihash *inodes, ino64_t ino);
 /* parse the output of the id command */
 struct iouser *sshfs_parse_id(const char *s);
+/* get the local user that started the translator */
+struct iouser * sshfs_get_local_user();
 /* replace the remote user UID and GID by the ones in LOCAL_USER if they match REMOTE_USER
  * otherwise, return -1 in BOTH UID and GID */
 error_t sshfs_replace_user(struct iouser *remote_user, struct iouser *local_user, uid_t *uid, gid_t *gid);

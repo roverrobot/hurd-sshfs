@@ -18,6 +18,8 @@
    
 #include <hurd.h>
 #include <hurd/iohelp.h>
+#include <hurd/netfs.h>
+#include <sys/mman.h>
 
 /* read an (base 10) integer from s, and move s forward */
 static int parse_int(const char **s)
@@ -60,6 +62,34 @@ struct iouser *sshfs_parse_id(const char *s)
   struct iouser *user;
   if (iohelp_create_complex_iouser(&user, &uid, 1, gids, n))
     return NULL;
+  return user;
+}
+
+/* return the local user that started the translator */
+struct iouser * sshfs_get_local_user()
+{
+  uid_t euidbuf[10], auidbuf[10], *euids = euidbuf, *auids = auidbuf;
+  gid_t egidbuf[10], agidbuf[10], *egids = egidbuf, *agids = agidbuf;
+  mach_msg_type_number_t euidsCnt = 10, auidsCnt = 10, egidsCnt = 10, agidsCnt = 10;
+  
+  auth_t auth = getauth ();
+  int r = auth_getids(auth, &euids, &euidsCnt, &auids, &auidsCnt,
+    &egids, &egidsCnt, &agids, &agidsCnt);
+  mach_port_deallocate(mach_task_self(), auth);
+  struct iouser *user;
+  if (!r)
+    r = iohelp_create_complex_iouser(&user, euids, euidsCnt, egids, egidsCnt);
+  if (!r)
+    {
+      if (euids != euidbuf)
+        munmap (euids, euidsCnt * sizeof (uid_t));
+      if (egids != egidbuf)
+        munmap (egids, egidsCnt * sizeof (uid_t));
+      if (auids != auidbuf)
+        munmap (auids, auidsCnt * sizeof (uid_t));
+      if (agids != agidbuf)
+        munmap (agids, agidsCnt * sizeof (uid_t));
+    }
   return user;
 }
 
