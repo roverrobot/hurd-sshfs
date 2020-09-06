@@ -729,21 +729,29 @@ out:
   return err;
 }
 
-error_t sshfs_rmdir(struct vfs_hooks *fs, ino64_t dir)
+error_t sshfs_rmdir(struct vfs_hooks *fs, ino64_t dir, const char *name)
 {
-  const char *p = remote_path(fs, dir);
-  pthread_mutex_lock(&((struct sshfs*)fs)->lock);
-  error_t err = get_errno(sftp_rmdir(((struct sshfs*)fs)->sftp, p));
-  pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
+  ino64_t ino;
+  error_t err = sshfs_lookup(fs, dir, name, &ino);
+  if (!err)
+    {
+      pthread_mutex_lock(&((struct sshfs*)fs)->lock);
+      err = get_errno(sftp_rmdir(((struct sshfs*)fs)->sftp, remote_path(fs, ino)));
+      pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
+    }
   return err;
 }
 
-error_t sshfs_unlink(struct vfs_hooks *fs, ino64_t ino)
+error_t sshfs_unlink(struct vfs_hooks *fs, ino64_t dir, const char *name)
 {
-  const char *p = remote_path(fs, ino);
-  pthread_mutex_lock(&((struct sshfs*)fs)->lock);
-  error_t err = get_errno(sftp_unlink(((struct sshfs*)fs)->sftp, p));
-  pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
+  ino64_t ino;
+  error_t err = sshfs_lookup(fs, dir, name, &ino);
+  if (!err)
+    {
+      pthread_mutex_lock(&((struct sshfs*)fs)->lock);
+      err = get_errno(sftp_unlink(((struct sshfs*)fs)->sftp, remote_path(fs, ino)));
+      pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
+    }
   return err;
 }
 
