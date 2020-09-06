@@ -755,6 +755,14 @@ error_t sshfs_unlink(struct vfs_hooks *fs, ino64_t dir, const char *name)
   return err;
 }
 
+error_t sshfs_utimes(struct vfs_hooks *fs, ino64_t ino, const struct timeval *times)
+{
+  pthread_mutex_lock(&((struct sshfs*)fs)->lock);
+  error_t err = get_errno(sftp_utimes(((struct sshfs*)fs)->sftp, remote_path(fs, ino), times));
+  pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
+  return err;
+}
+
 /* create an sshfs the implements vfs_hooks from the URL */
 struct sshfs *sshfs_create(struct URL *url)
 {
@@ -795,6 +803,7 @@ struct sshfs *sshfs_create(struct URL *url)
   fs->hooks.mkinode = sshfs_mkinode;
   fs->hooks.rmdir = sshfs_rmdir;
   fs->hooks.unlink = sshfs_unlink;
+  fs->hooks.utimes = sshfs_utimes;
   fs->inodes = sshfs_getihash();
   return fs;
 }
