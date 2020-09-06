@@ -729,6 +729,15 @@ out:
   return err;
 }
 
+error_t sshfs_rmdir(struct vfs_hooks *fs, ino64_t dir)
+{
+  const char *p = remote_path(fs, dir);
+  pthread_mutex_lock(&((struct sshfs*)fs)->lock);
+  error_t err = get_errno(sftp_rmdir(((struct sshfs*)fs)->sftp, p));
+  pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
+  return err;
+}
+
 /* create an sshfs the implements vfs_hooks from the URL */
 struct sshfs *sshfs_create(struct URL *url)
 {
@@ -767,6 +776,7 @@ struct sshfs *sshfs_create(struct URL *url)
   fs->hooks.read = sshfs_read;
   fs->hooks.write = sshfs_write;
   fs->hooks.mkinode = sshfs_mkinode;
+  fs->hooks.rmdir = sshfs_rmdir;
   fs->inodes = sshfs_getihash();
   return fs;
 }
