@@ -86,5 +86,7 @@ struct iouser * sshfs_get_local_user();
 /* replace the remote user UID and GID by the ones in LOCAL_USER if they match REMOTE_USER
  * otherwise, return -1 in BOTH UID and GID */
 error_t sshfs_replace_user(struct iouser *remote_user, struct iouser *local_user, uid_t *uid, gid_t *gid);
+/* check whether UID and GID is the local user */
+int sshfs_check_user(struct iouser *local_user, uid_t uid, gid_t gid);
 
 #endif

@@ -101,3 +101,8 @@ error_t sshfs_replace_user(struct iouser *remote_user, struct iouser *local_user
   *gid = (idvec_contains(remote_user->gids, *gid)) ? local_user->gids->ids[0] : -1;
   return ESUCCESS;
 }
+
+int sshfs_check_user(struct iouser *local_user, uid_t uid, gid_t gid)
+{
+  return uid == local_user->uids->ids[0] && gid == local_user->gids->ids[0];
+}

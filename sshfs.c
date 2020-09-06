@@ -17,6 +17,7 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
 #include "sshfs_hooks.h"
 #include "sshfs.h"
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
@@ -396,8 +397,17 @@ error_t sshfs_lookup(struct vfs_hooks *fs, ino64_t dir, const char *name, ino64_
   char *p = concat_path(remote_path(fs, dir), name);
   if (p == NULL)
     return ENOMEM;
+  
+  error_t err;
   pthread_mutex_lock(&((struct sshfs*)fs)->lock);
-  error_t err = sshfs_getinode(((struct sshfs*)fs)->inodes, p, ino);
+  sftp_attributes attr = sftp_lstat(((struct sshfs*)fs)->sftp, p);
+  if (attr == NULL)
+    err = get_error(fs);
+  else
+    {
+      sftp_attributes_free(attr);
+      err = sshfs_getinode(((struct sshfs*)fs)->inodes, p, ino);
+    }
   pthread_mutex_unlock(&((struct sshfs*)fs)->lock);
   return err;
 }
@@ -611,6 +621,114 @@ static error_t sshfs_write(vfs_file_t file, off_t offset, const void *buffer, si
   return err;
 }
 
+static error_t sshfs_mkinode(struct vfs_hooks *hooks, ino64_t dir, const char *name, 
+   mode_t mode, uid_t uid, gid_t gid, void *data, size_t len)
+{
+  /* uid and gid must be the same as the local user, as we know nothing about other users
+   * on the remote host */
+  struct sshfs *fs = (struct sshfs*)hooks;
+  if (!sshfs_check_user(fs->local_user, uid, gid))
+    return ENOTSUP;
+  
+  pthread_mutex_lock(&fs->lock);
+
+  error_t err = ESUCCESS;
+  ino64_t ino;
+  char *p = concat_path(remote_path(hooks, dir), name);
+  if (p == NULL)
+    err = ENOMEM;
+
+  if (!err)
+    err = sshfs_getinode(fs->inodes, p, &ino);
+  const char *path = (err) ? NULL : remote_path(hooks, ino);
+
+  if (!err)
+    {
+      sftp_attributes attr = sftp_lstat(fs->sftp, path);
+      if (attr)
+        {
+          sftp_attributes_free(attr);
+          err = EEXIST;
+        }
+    }
+
+  if (err)
+    goto out;
+
+  if ((mode & S_IFMT) == S_IFREG)
+    {
+      sftp_file file = sftp_open(fs->sftp, path, O_RDWR | O_CREAT, mode);
+      if (file == NULL)
+        {
+          err = get_error(hooks);
+          goto out;
+        }
+
+      void *p = data;
+      size_t plen;
+
+      /* if data == NULL, and len > 0, we need to fill with 0 */
+      if (!err)
+        {
+          if (p == NULL && len > 0)
+            {
+              plen = (len > 65536) ? 65536 : len;
+              p = malloc(plen);
+              if (p == NULL)
+                {
+                  err = ENOMEM;
+                  goto out;
+                }
+              memset(p, 0, plen);
+            }
+        }
+      
+      /* write data in p */
+      if (!err && p != NULL)
+        {
+          while (len > 0)
+            {
+              size_t l =  plen;
+              int written = sftp_write(file, p, l);
+              if (written < 0)
+                {
+                  err = get_error(hooks);
+                  break;
+                }
+              if (written == 0)
+                break;
+              if (data != NULL)
+                p += written;
+              len -= written;
+            }
+        }
+      
+      if (data == NULL && p != NULL)
+        free(p);
+      sftp_close(file);
+    }
+  else if ((mode & S_IFMT) == S_IFDIR)
+    err = get_errno(sftp_mkdir(fs->sftp, path, mode));
+  else if ((mode & S_IFMT) == S_IFLNK)
+    {
+      char *target = malloc(len + 1);
+      if (target == NULL)
+         err = ENOMEM;
+      else
+        {
+          memcpy(target, data, len);
+          target[len] = 0;
+          err = get_errno(sftp_symlink(fs->sftp, target, path));
+        }
+    }
+  else
+    err = EOPNOTSUPP;
+  
+out:  
+  pthread_mutex_unlock(&fs->lock);
+  return err;
+}
+
 /* create an sshfs the implements vfs_hooks from the URL */
 struct sshfs *sshfs_create(struct URL *url)
 {
@@ -648,6 +766,7 @@ struct sshfs *sshfs_create(struct URL *url)
   fs->hooks.close = sshfs_close;
   fs->hooks.read = sshfs_read;
   fs->hooks.write = sshfs_write;
+  fs->hooks.mkinode = sshfs_mkinode;
   fs->inodes = sshfs_getihash();
   return fs;
 }
